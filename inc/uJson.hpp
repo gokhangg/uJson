@@ -13,40 +13,58 @@
 #include <optional>
 #include <sstream>
 #include <algorithm>
-#include <utility>
 
 namespace uJson {
 
 using BasicString = std::basic_string_view<char>;
+
+
+template<typename T>
+struct TypeCheck {
+    using NonConstType = typename std::remove_const<T>::type;
+    static constexpr bool isBool = std::is_same<NonConstType, bool>::value;
+    static constexpr bool isInteger = std::is_integral<NonConstType>::value && !isBool;
+    static constexpr bool isFloatingPoint = std::is_same<NonConstType, float>::value;
+    static constexpr bool isDouble = std::is_same<NonConstType, double>::value;
+    static constexpr bool isString = std::is_same<NonConstType, std::string>::value;
+    static constexpr bool isValid = isBool || isInteger || isFloatingPoint || isDouble || isString;
+};
+
+/**
+ * @brief Get the Value object inside the given string_view
+ * If data type in the string mismatch the function returns empty.
+ * @tparam Return type of the value in the string
+ * @param string T String view containing the values as string.
+ * @return std::optional<T> 
+ */
 template<typename T>
 std::optional<T> GetValue(const BasicString& string) {
+    static_assert(TypeCheck<T>::isValid, "Unsupported data type expectation.");
     auto str = std::string(std::begin(string), std::end(string));
     auto cstr = str.c_str();
     char* end_ss;
-    if constexpr (std::is_integral<T>::value && !std::is_same<T, bool>::value) {
+    if constexpr (TypeCheck<T>::isInteger) {
         auto val = std::strtoll(cstr, &end_ss, 10);
         if (end_ss == cstr) return {};
         return static_cast<T>(val);
-    } else if constexpr (std::is_same<T, float>::value) {
+    } else if constexpr (TypeCheck<T>::isFloatingPoint) {
         auto val = std::strtof(cstr, &end_ss);
         if (end_ss == cstr) return {};
         return val;
-    } else if constexpr (std::is_same<T, double>::value) {
+    } else if constexpr (TypeCheck<T>::isDouble) {
         auto val = std::strtod(cstr, &end_ss);
         if (end_ss == cstr) return {};
         return val;
-    } else if constexpr (std::is_same<T, std::string>::value) {
+    } else if constexpr (TypeCheck<T>::isString) {
         if (str[0] != '\"') return {};
         str.erase(0, 1);
         auto pos = str.find_last_of("\"");
         str.erase(pos);
-        return std::move(str);
-    } else if constexpr (std::is_same<T, bool>::value) {
+        return str;
+    } else if constexpr (TypeCheck<T>::isBool) {
         bool b;
         std::istringstream(str) >> std::boolalpha >> b;
         return b;
-    } else {
-        static_assert(false, "Unsupported data type expectation.");
     }
     return {};
 }
@@ -54,30 +72,91 @@ std::optional<T> GetValue(const BasicString& string) {
 
 class ItemI;
 
+
+/**
+ * @brief Used to access array item members.
+ * 
+ */
 class ItemArray {
     const std::vector<std::unique_ptr<ItemI>>* vectP_;
+
  public:
+    /**
+     * @brief Construct a new Item Array object
+     * 
+     * @param arr Vector pointer containing the items.
+     */
     explicit ItemArray(const void* arr)
      : vectP_{ reinterpret_cast<decltype(vectP_)>(arr) } {}
+
+    /**
+     * @brief Used to access items in the array by index.
+     * 
+     * @param ind 
+     * @return const ItemI& 
+     */
     const ItemI& operator[](const size_t ind) const {
         return *(*vectP_)[ind].get();
     }
+
+    /**
+     * @brief Used to get size of the array.
+     * 
+     * @return size_t 
+     */
     size_t size() const {
         return (*vectP_).size();
     }
 };
 
+
+/**
+ * @brief Interface for data items.
+ * 
+ */
 class ItemI {
  public:
-    ItemI() = default;
-    ItemI(const ItemI&) = delete;
-    const ItemI& operator=(const ItemI&) = delete;
-    virtual void Add(const char* name, std::unique_ptr<ItemI> component) {}
+    /**
+     * @brief Used to add an item.
+     * 
+     * @param name Key of the item to be added.
+     * @param item Item to be added.
+     */
+    virtual void Add(const char* name, std::unique_ptr<ItemI> item) {}
+
+    /**
+     * @brief Removes and item in the list given its name.
+     * If name is not found does nothing.
+     * @param name 
+     */
     virtual void Remove(const char* name) {}
+
+    /**
+     * @brief Used to check if the item is a branch.
+     * 
+     * @return true Is branch.
+     * @return false Is not branch.
+     */
     virtual bool IsBranch() const {
         return false;
     }
+
+    /**
+     * @brief Used to find an item given its key.
+     * If not found returns empty.
+     * 
+     * @param name Item key.
+     * @return std::optional<const ItemI*> 
+     */
     virtual std::optional<const ItemI*> Find(const  char* name) const { return {}; }
+
+    /**
+     * @brief Get the Value As object given the data type.
+     * If there occurs any error returns empty.
+     * 
+     * @tparam T Expected type.
+     * @return std::optional<T> 
+     */
     template<typename T>
     std::optional<T> GetValueAs() const {
         if (IsBranch()) return {};
@@ -88,21 +167,37 @@ class ItemI {
             return ItemArray(ptr);
     }
     virtual ~ItemI() {}
- protected:
+
+ private:
+    /**
+     * @brief Get the Root Ptr object
+     * 
+     * @return const void* pointer to the underlying item.
+     */
     virtual const void* GetRootPtr() const = 0;
 };
 
 
+/**
+ * @brief Leaf class representing a direct value.
+ * 
+ */
 class Leaf : public ItemI {
  public:
     Leaf() = delete;
-    explicit Leaf(const BasicString& string)
+    /**
+     * @brief Construct a new Leaf object
+     * 
+     * @param string String containing the data.
+     */
+    explicit Leaf(const BasicString& string) noexcept
         : string_{ string } {}
-    const void* GetRootPtr() const override {
-        return &string_;
-    }
+
     ~Leaf() override = default;
  private:
+    const void* GetRootPtr() const noexcept override {
+        return &string_;
+    }
     BasicString string_;
 };
 
@@ -111,8 +206,13 @@ class Branch : public ItemI {
     class Array : public ItemI {
         friend class ItemArray;
      public:
+        /**
+         * @brief Construct a new Array object
+         * 
+         * @param string String containing the data.
+         */
         explicit Array(const BasicString& string) {
-            auto i = ++std::begin(string);
+            auto i = std::next(std::begin(string));
             auto end = std::end(string);
             for (; i != end; ++i) {
                 auto obj = CheckPresenceObj(i, end);
@@ -124,28 +224,41 @@ class Branch : public ItemI {
                 return;
             }
         }
-        const void* GetRootPtr() const override {
-            return &vect_;
-        }
-        bool empty() const {
+
+        /**
+         * @brief Used to check if array is empty.
+         * 
+         * @return true 
+         * @return false 
+         */
+        bool Empty() const noexcept {
             return std::empty(vect_);
         }
+
      private:
+        const void* GetRootPtr() const noexcept override {
+            return &vect_;
+        }
         std::vector<std::unique_ptr<ItemI>> vect_;
     };
 
  public:
-    explicit Branch(const BasicString& basicStr) {
+    /**
+     * @brief Construct a new Branch object
+     * 
+     * @param string String containing the data.
+     */
+    explicit Branch(const BasicString& _string) {
         BasicString string;
         using namespace std::literals;  // NOLINT
         {
-            auto frst = basicStr.find_first_not_of(" \n"sv);
-            auto last = basicStr.find_last_not_of(" "sv);
-            if (basicStr[last] != '}') return;
-            string = basicStr.substr(frst, last + 1);
+            auto frst = _string.find_first_not_of(" \n"sv);
+            auto last = _string.find_last_not_of(" \n"sv);
+            if (_string[last] != '}' || _string[frst] != '{') return;
+            string = _string.substr(++frst, last + 1);
         }
         auto i = std::begin(string);
-        const auto const end = std::end(string);  // NOLINT
+        const auto end = std::end(string);  // NOLINT
         auto findKey = [&]() {
             Branch::PassSpace(i, end);
             if (*i != '\"') return std::optional<BasicString>{};
@@ -155,7 +268,7 @@ class Branch : public ItemI {
             i = ++j;
             return val;
         };
-        if (*i++ != '{') return;
+
         for (; i != end; ++i) {
             auto item = findKey();
             if (!item) {
@@ -169,7 +282,7 @@ class Branch : public ItemI {
             }
             auto obj = CheckPresenceObj(i, end);
             if (obj) {
-                map_[item.value()] = std::move(obj);
+                map_.emplace(item.value(), std::move(obj));
                 continue;
             }
             map_.clear();
@@ -177,13 +290,18 @@ class Branch : public ItemI {
         }
     }
 
-
+    /**
+     * @brief Construct a new Branch object
+     * 
+     * @param str string.
+     * @param size string size.
+     */
     Branch(const char* str, size_t size)
         : Branch(BasicString{ str, size }) {
     }
 
-    void Add(const char* name, std::unique_ptr<ItemI> component) override {
-        map_[name] = std::move(component);
+    void Add(const char* name, std::unique_ptr<ItemI> item) override {
+        map_[name] = std::move(item);
     }
 
     void Remove(const char* name) override {
@@ -221,20 +339,23 @@ class Branch : public ItemI {
         auto obj = std::make_unique<Leaf>(BasicString{ &*it, \
             static_cast<size_t>(std::distance(it, j)) });
         it = j;
-        return std::move(obj);
+        return obj;
     }
 
     static auto FindArray(BasicString::iterator& it, \
         const BasicString::iterator& end) -> std::unique_ptr<ItemI> {
         if (*it == '[') {
-            auto j = std::find_if(it, end, [](auto& it) { return it == ']'; });
+            int i = 0;
+            auto j = std::find_if(it, end, [&i](auto& it) {
+                if (it == '[') ++i;
+                if (it == ']') --i;
+                return i == 0 && it == ']'; });
             if (j == end) return std::unique_ptr<ItemI>();
             auto obj = std::make_unique<Array>(BasicString{ &*it, static_cast<size_t>(std::distance(it, ++j)) });
-            if (obj->empty()) return std::unique_ptr<ItemI>();
+            if (obj->Empty()) return std::unique_ptr<ItemI>();
             it = j;
-            Branch::PassSpace(it, end);
-            if (*it == ',') ++it;
-            return std::move(obj);
+            it = std::find_if_not(it, end, [](auto& it) {return it == ' ' || it == ','; });
+            return obj;
         }
         return std::unique_ptr<ItemI>();
     }
@@ -242,19 +363,17 @@ class Branch : public ItemI {
     static auto FindBranch(BasicString::iterator& it, \
         const BasicString::iterator& end) -> std::unique_ptr<ItemI> {
         if (*it == '{') {
-            auto j = it;
             int i = 0;
-            while (*++j != '}' || i > 0) {
-                if (*j == '{') ++i;
-                if (*j == '}') --i;
-                if (j == end) return std::unique_ptr<ItemI>();
-            }
+            auto j = std::find_if(it, end, [&i](auto& it) {
+                if (it == '{') ++i;
+                if (it == '}') --i;
+                return i == 0 && it == '}'; });
             auto obj = std::make_unique<Branch>(&*it, std::distance(it, ++j));
             if (obj->map_.empty()) return std::unique_ptr<ItemI>();
             it = j;
             PassSpace(it, end);
             if (*it == ',') ++it;
-            return std::move(obj);
+            return obj;
         }
         return std::unique_ptr<ItemI>();
      }
@@ -264,15 +383,15 @@ class Branch : public ItemI {
         Branch::PassSpace(it, end);
         if (*it == '{') {
             auto value = FindBranch(it, end);
-            if (value) return std::move(value);
+            if (value) return value;
             return std::unique_ptr<ItemI>();
         }
         if (*it == '[') {
             auto value = Branch::FindArray(it, end);
-            if (value) return std::move(value);
+            if (value) return value;
             return std::unique_ptr<ItemI>();
         }
-        if (*it != '\"' && !std::isdigit(*it)) return std::unique_ptr<ItemI>();
+        if (*it != '\"' && !std::isalnum(*it)) return std::unique_ptr<ItemI>();
         return Branch::FindItem(it, end);
     };
 
