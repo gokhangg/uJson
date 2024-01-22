@@ -31,5 +31,5 @@ if (DEFINED BUILD_TESTS)
     endif()
 
     add_subdirectory(${EXTERNAL_LIB_LOCATION}/googletest)
-    add_subdirectory(test)
+    add_subdirectory(tests)
 endif()
