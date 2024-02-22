@@ -5,7 +5,7 @@
  * License: GNU GPL v3 (see License.txt)
  */
 
-#include "uJson.hpp"  // NOLINT
+#include "uJson/uJson.hpp"  // NOLINT
 
 #include "gtest/gtest.h"
 
@@ -37,23 +37,23 @@ TEST(uJson, ValidJson) {
     cstr dquote = "\"";
     auto json = GetJsonString(to_string(kVal1), to_string(kVal21), dquote + kVal22 + dquote, \
         kVal31 ? "true": "false", dquote + kVal32 + dquote);
-    uJson::Branch branch(json);
+    auto branch = uJson::ParseJsonStream(json);
     EXPECT_TRUE(branch);
 
-    auto val1 = branch.Find("Key1");
-    EXPECT_EQ(val1.value()->GetValueAs<int>().value(), kVal1);
-
-    auto val2 = branch.Find("Key2");
-    EXPECT_NEAR(val2.value()->Find("Key21").value()->GetValueAs<float>().value(), kVal21, 0.001f);
-    EXPECT_EQ(val2.value()->Find("Key22").value()->GetValueAs<cstr>().value(), kVal22);
-
-    auto val3 = branch.Find("Key3").value()->GetValueAs<uJson::ItemArray>();
+    auto val1 = branch->Find("Key1");
+    EXPECT_EQ(val1->GetValueAs<const int>().value(), kVal1);
+    
+    auto val2 = branch->Find("Key2");
+    EXPECT_NEAR(val2->Find("Key21")->GetValueAs<float>().value(), kVal21, 0.001f);
+    EXPECT_EQ(val2->Find("Key22")->GetValueAs<cstr>().value(), kVal22);
+    
+    auto val3 = branch->Find("Key3")->GetValueAs<const uJson::Array>();
     EXPECT_EQ(val3.value()[0].GetValueAs<int>().value(), 1);
     auto val31 = val3.value()[1].Find("Key31");
-    EXPECT_EQ(val31.value()->GetValueAs<bool>().value(), kVal31);
+    EXPECT_EQ(val31->GetValueAs<bool>().value(), kVal31);
     auto val32 = val3.value()[1].Find("Key32");
-    EXPECT_EQ(val32.value()->GetValueAs<cstr>().value(), kVal32);
-    auto val33 = val3.value()[2].GetValueAs<uJson::ItemArray>();
+    EXPECT_EQ(val32->GetValueAs<cstr>().value(), kVal32);
+    auto val33 = val3.value()[2].GetValueAs<uJson::Array>();
     EXPECT_EQ(val33.value()[0].GetValueAs<int>().value(), 2);
 }
 
@@ -67,6 +67,6 @@ TEST(uJson, InvalidJson) {
     cstr dquote = ",";
     auto json = GetJsonString(to_string(kVal1), to_string(kVal21), dquote + kVal22 + dquote, \
         kVal31 ? "true" : "false", dquote + kVal32 + dquote);
-    uJson::Branch branch(json);
+    auto branch = uJson::ParseJsonStream(json);
     EXPECT_FALSE(branch);
 }
