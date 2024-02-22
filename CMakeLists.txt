@@ -5,8 +5,9 @@ project(uJson)
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_library(uJson INTERFACE)
-target_include_directories(uJson INTERFACE inc)
+add_library(uJson STATIC)
+target_include_directories(uJson PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_sources(uJson PRIVATE uJson/src/uJson.cpp)
 
 if (DEFINED BUILD_TESTS)
     find_package(Git)
